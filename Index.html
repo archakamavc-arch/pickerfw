@@ -180,8 +180,21 @@ window.onload = function() {
 };
 
 function init(raw) {
-  if (!raw || raw.length === 0) {
-    document.getElementById('loading').textContent = 'No data found in sheet.';
+  // Server returned sentinel object when sheet is empty
+  if (!raw || !Array.isArray(raw)) {
+    const info = raw || {};
+    document.getElementById('loading').innerHTML =
+      `<div class="text-danger fw-semibold">No data found.</div>` +
+      `<div class="text-muted mt-2" style="font-size:0.85rem">` +
+      `Sheet: <strong>${info._sheetName || '(unknown)'}</strong> — ` +
+      `${info._rows === 1 ? 'Only header row present, no data rows.' : info._rows === 0 ? 'Sheet is empty.' : 'Empty result.'}` +
+      `<br>Check that your Python script has pushed data and the sheet name matches.</div>`;
+    return;
+  }
+  if (raw.length === 0) {
+    document.getElementById('loading').innerHTML =
+      `<div class="text-warning fw-semibold">Sheet found but returned 0 data rows.</div>` +
+      `<div class="text-muted mt-2" style="font-size:0.85rem">Run your Python pipeline to push data, then reload.</div>`;
     return;
   }
 
