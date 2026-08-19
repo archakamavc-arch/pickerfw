@@ -11,9 +11,9 @@
     td { white-space: nowrap; font-size: 0.8rem; vertical-align: middle; }
     .tbl-wrap { max-height: 480px; overflow-y: auto; }
     .sort-icon { font-size: 0.7rem; color: #999; margin-left: 3px; }
-    .badge-best { background: #d1fae5; color: #065f46; padding: 2px 9px; border-radius: 10px; font-size: 0.75rem; font-weight: 600; }
+    .badge-best  { background: #d1fae5; color: #065f46; padding: 2px 9px; border-radius: 10px; font-size: 0.75rem; font-weight: 600; }
     .badge-needs { background: #fee2e2; color: #991b1b; padding: 2px 9px; border-radius: 10px; font-size: 0.75rem; font-weight: 600; }
-    .badge-avg  { background: #e5e7eb; color: #374151; padding: 2px 9px; border-radius: 10px; font-size: 0.75rem; font-weight: 600; }
+    .badge-avg   { background: #e5e7eb; color: #374151; padding: 2px 9px; border-radius: 10px; font-size: 0.75rem; font-weight: 600; }
     .score-hi { color: #059669; font-weight: 700; }
     .score-md { color: #d97706; font-weight: 700; }
     .score-lo { color: #dc2626; font-weight: 700; }
@@ -21,16 +21,15 @@
     .bar-fill  { height: 100%; border-radius: 3px; }
     .kpi-val { font-size: 1.7rem; font-weight: 700; }
     .kpi-lbl { font-size: 0.75rem; color: #6b7280; }
-    #loading { text-align: center; padding: 80px; font-size: 1.1rem; color: #6b7280; }
+    .info-row { font-size: 0.78rem; color: #6b7280; margin-top: 4px; }
     .nav-tabs .nav-link { font-size: 0.85rem; }
     .nav-tabs .nav-link.active { font-weight: 600; }
     .tab-panel { border-top: none; border-radius: 0 0 10px 10px; }
-    .info-row { font-size: 0.78rem; color: #6b7280; margin-top: 4px; }
   </style>
 </head>
 <body>
 
-<div id="loading">Loading data, please wait…</div>
+<div id="err-banner" style="display:none;padding:40px;text-align:center"></div>
 
 <div id="app" class="container-fluid px-2" style="display:none">
 
@@ -115,12 +114,8 @@
 
   <!-- Tabs -->
   <ul class="nav nav-tabs" id="mainTabs">
-    <li class="nav-item">
-      <button class="nav-link active" onclick="showTab('summary')">Score Summary</button>
-    </li>
-    <li class="nav-item">
-      <button class="nav-link" onclick="showTab('detail')">Picker Details</button>
-    </li>
+    <li class="nav-item"><button class="nav-link active" onclick="showTab('summary')">Score Summary</button></li>
+    <li class="nav-item"><button class="nav-link" onclick="showTab('detail')">Picker Details</button></li>
   </ul>
 
   <!-- Score Summary Tab -->
@@ -138,7 +133,7 @@
       </div>
     </div>
     <div class="tbl-wrap">
-      <table class="table table-hover table-bordered table-sm mb-0" id="summary-table">
+      <table class="table table-hover table-bordered table-sm mb-0">
         <thead id="summary-thead"></thead>
         <tbody id="summary-tbody"></tbody>
       </table>
@@ -155,63 +150,42 @@
     </div>
   </div>
 
-</div><!-- #app -->
+</div>
 
 <script>
-// ── State ──────────────────────────────────────────────────────────────
-let masterData = [];       // raw rows from sheet
-let scoredData  = [];      // aggregated + scored pickers
-let filteredScored = [];   // after picker-search
+// ── Data injected by GAS template (no google.script.run needed) ─────────
+const RAW_DATA = <?!= jsonData ?>;
+
+// ── State ───────────────────────────────────────────────────────────────
+let masterData = [];
+let scoredData  = [];
+let filteredScored = [];
 
 let SCORE_METRICS = ['_infUnitPct', '_misshipUnitPct', '_missingUnitPct', '_avgInstoreUnitMin'];
-// pRTO added dynamically if column detected
 
-let detailSortKey = '_totalScore', detailSortAsc = false;
-let summarySortKey = '_avgScore',  summarySortAsc = false;
+let detailSortKey  = '_totalScore', detailSortAsc  = false;
+let summarySortKey = '_avgScore',   summarySortAsc = false;
 
-// ── Bootstrap ──────────────────────────────────────────────────────────
-window.onload = function() {
-  google.script.run
-    .withSuccessHandler(init)
-    .withFailureHandler(e => {
-      document.getElementById('loading').textContent = 'Error: ' + e.message;
-    })
-    .getDashboardData();
-};
+// ── Bootstrap ────────────────────────────────────────────────────────────
+window.onload = function() { init(RAW_DATA); };
 
 function init(raw) {
-  if (!raw || !Array.isArray(raw)) {
-    // Sentinel object returned when sheet found but empty
-    const info = (raw && typeof raw === 'object') ? raw : {};
-    const name = info.sheetName || '(unknown)';
-    let detail;
-    if (info.status === 'EMPTY') {
-      detail = `Sheet "<b>${name}</b>" is completely empty. Push data via your Python script, then reload.`;
-    } else if (info.status === 'HEADER_ONLY') {
-      detail = `Sheet "<b>${name}</b>" has only the header row — no data rows yet.<br>` +
-               `Headers found: <code>${info.headers || '?'}</code><br>Push data via your Python script, then reload.`;
-    } else {
-      // Unknown object — likely an authorization error or stale deployment
-      detail = `Unexpected response from server. Most likely cause: <b>re-authorization required</b>.<br>` +
-               `<ol style="margin:6px 0 0 16px;padding:0">` +
-               `<li>Open the Apps Script editor → Run → <code>testAuth</code></li>` +
-               `<li>Accept the permission dialog</li>` +
-               `<li>Deploy a new version (Deploy → Manage deployments → New version)</li>` +
-               `<li>Reload this page</li></ol>`;
-    }
-    document.getElementById('loading').innerHTML =
-      `<div class="text-danger fw-semibold mb-2">No data loaded</div>` +
-      `<div style="font-size:0.85rem;max-width:500px;margin:0 auto;text-align:left">${detail}</div>`;
+  if (!raw || raw.error) {
+    document.getElementById('err-banner').style.display = '';
+    document.getElementById('err-banner').innerHTML =
+      `<div class="text-danger fw-semibold">Error loading data from sheet</div>` +
+      `<div class="text-muted mt-1">${(raw && raw.error) || 'Unknown error'}</div>`;
     return;
   }
-  if (raw.length === 0) {
-    document.getElementById('loading').innerHTML =
-      `<div class="text-warning fw-semibold">Sheet returned 0 data rows.</div>` +
-      `<div class="text-muted mt-2" style="font-size:0.85rem">Run your Python pipeline to push data, then reload.</div>`;
+  if (!Array.isArray(raw) || raw.length === 0) {
+    document.getElementById('err-banner').style.display = '';
+    document.getElementById('err-banner').innerHTML =
+      `<div class="text-warning fw-semibold">Sheet found but no data rows.</div>` +
+      `<div class="text-muted mt-1">Run your Python pipeline to push data, then reload.</div>`;
     return;
   }
 
-  // Detect pRTO column (sheet column is Total_PRTO)
+  // Detect pRTO column — sheet uses Total_PRTO
   if (raw[0].hasOwnProperty('Total_PRTO')) {
     SCORE_METRICS.push('_pRTOPct');
   }
@@ -227,27 +201,24 @@ function init(raw) {
     return row;
   });
 
-  // Set date range
   const dates = masterData.map(r => r._displayDate).filter(Boolean).sort();
   if (dates.length) {
     document.getElementById('f-date-from').value = dates[0];
     document.getElementById('f-date-to').value   = dates[dates.length - 1];
     document.getElementById('data-period-label').textContent =
-      `Data: ${dates[0]} → ${dates[dates.length - 1]}  (${new Set(dates).size} day(s))`;
+      `Data: ${dates[0]} → ${dates[dates.length - 1]}  (${new Set(dates).size} day(s), ${masterData.length.toLocaleString()} records)`;
   }
 
   document.querySelectorAll('.fi').forEach(el => el.addEventListener('change', applyFilters));
   document.getElementById('f-picker').addEventListener('input', renderAll);
   document.getElementById('reset-btn').addEventListener('click', resetFilters);
 
-  document.getElementById('loading').style.display = 'none';
   document.getElementById('app').style.display = '';
-
   buildDetailHeader();
   applyFilters();
 }
 
-// ── Filters ────────────────────────────────────────────────────────────
+// ── Filters ──────────────────────────────────────────────────────────────
 function getF() {
   return {
     dateFrom : document.getElementById('f-date-from').value,
@@ -277,27 +248,21 @@ function applyFilters() {
   updateDropdown('f-store',    'Stores',          'store',    f);
 
   const filteredRaw = masterData.filter(r => rowPasses(r, f));
-  const agg = aggregatePickers(filteredRaw);
-  scoredData = scoreStoreWise(agg);
+  scoredData = scoreStoreWise(aggregatePickers(filteredRaw));
 
   const maxScore = SCORE_METRICS.length * 10;
   document.getElementById('scoring-note').textContent =
-    `Scores are store-wise relative (0–10 per metric). Max total: ${maxScore}. ` +
-    `Metrics scored: ${SCORE_METRICS.map(m => ({
-      '_infUnitPct':'INF%','_misshipUnitPct':'Misship%','_missingUnitPct':'Missing%',
-      '_avgInstoreUnitMin':'Instore/Unit','_pRTOPct':'pRTO%'
-    }[m]||m)).join(', ')}.`;
-
+    `Scores are store-wise relative (0–10 per metric, max ${maxScore} total). ` +
+    `Metrics: ${SCORE_METRICS.map(m => ({'_infUnitPct':'INF%','_misshipUnitPct':'Misship%',
+      '_missingUnitPct':'Missing%','_avgInstoreUnitMin':'Instore/Unit','_pRTOPct':'pRTO%'}[m]||m)).join(', ')}.`;
   renderAll();
 }
 
 function updateDropdown(elId, rowKey, fKey, f) {
-  const tmp = { ...f, [fKey]: 'All' };
+  const tmp  = { ...f, [fKey]: 'All' };
   const opts = new Set();
   masterData.forEach(r => { if (rowPasses(r, tmp) && r[rowKey]) opts.add(r[rowKey]); });
-
-  const sel = document.getElementById(elId);
-  const cur = f[fKey];
+  const sel = document.getElementById(elId), cur = f[fKey];
   sel.innerHTML = '<option value="All">All</option>';
   [...opts].sort().forEach(v => {
     const o = document.createElement('option');
@@ -318,7 +283,7 @@ function resetFilters() {
   applyFilters();
 }
 
-// ── Aggregation ────────────────────────────────────────────────────────
+// ── Aggregation ───────────────────────────────────────────────────────────
 function aggregatePickers(rows) {
   const map = {};
   rows.forEach(r => {
@@ -331,227 +296,186 @@ function aggregatePickers(rows) {
       };
     }
     const p = map[key];
-    p._o   += Number(r['Total_Orders'])          || 0;
-    p._u   += Number(r['Total_Units'])           || 0;
-    p._inf += Number(r['Total_INF'])             || 0;
-    p._mis += Number(r['Total_Misshipment'])     || 0;
-    p._mss += Number(r['Total_Missing_Item'])    || 0;
-    p._sec += Number(r['Total_Instore_Time_Sec'])|| 0;
-    p._rto += Number(r['Total_PRTO'])            || 0;
-    p._ret += Number(r['Total_Returns'])         || 0;
+    p._o   += Number(r['Total_Orders'])           || 0;
+    p._u   += Number(r['Total_Units'])            || 0;
+    p._inf += Number(r['Total_INF'])              || 0;
+    p._mis += Number(r['Total_Misshipment'])      || 0;
+    p._mss += Number(r['Total_Missing_Item'])     || 0;
+    p._sec += Number(r['Total_Instore_Time_Sec']) || 0;
+    p._rto += Number(r['Total_PRTO'])             || 0;
+    p._ret += Number(r['Total_Returns'])          || 0;
   });
 
   return Object.values(map).map(p => {
     const {_o:o, _u:u, _inf, _mis, _mss, _sec, _rto, _ret} = p;
-    p.Total_Orders          = o;
-    p.Total_Units           = u;
-    p.Total_INF             = _inf;
-    p.Total_Misshipment     = _mis;
-    p.Total_Missing_Item    = _mss;
-    p.Total_Returns         = _ret;
-    p._totalInstoreMin      = +(_sec/60).toFixed(2);
-    p._avgInstoreOrderMin   = o>0 ? +((_sec/o)/60).toFixed(2) : 0;
-    p._avgInstoreUnitMin    = u>0 ? +((_sec/u)/60).toFixed(3) : 0;
-    p._infUnitPct           = u>0 ? +(_inf/_u*100).toFixed(3) : 0;
-    p._misshipUnitPct       = u>0 ? +(_mis/_u*100).toFixed(3) : 0;
-    p._missingUnitPct       = u>0 ? +(_mss/_u*100).toFixed(3) : 0;
-    p._pRTOPct              = o>0 ? +(_rto/_o*100).toFixed(3) : 0;
+    p.Total_Orders       = o;
+    p.Total_Units        = u;
+    p.Total_INF          = _inf;
+    p.Total_Misshipment  = _mis;
+    p.Total_Missing_Item = _mss;
+    p.Total_Returns      = _ret;
+    p.Total_PRTO         = _rto;
+    p._totalInstoreMin     = +(_sec/60).toFixed(2);
+    p._avgInstoreOrderMin  = o>0 ? +((_sec/o)/60).toFixed(2) : 0;
+    p._avgInstoreUnitMin   = u>0 ? +((_sec/u)/60).toFixed(3) : 0;
+    p._infUnitPct          = u>0 ? +(_inf/u*100).toFixed(3) : 0;
+    p._misshipUnitPct      = u>0 ? +(_mis/u*100).toFixed(3) : 0;
+    p._missingUnitPct      = u>0 ? +(_mss/u*100).toFixed(3) : 0;
+    p._pRTOPct             = o>0 ? +(_rto/o*100).toFixed(3) : 0;
     return p;
   });
 }
 
-// ── Scoring ────────────────────────────────────────────────────────────
+// ── Scoring ───────────────────────────────────────────────────────────────
 function scoreStoreWise(pickers) {
-  // Group by store
   const stores = {};
-  pickers.forEach(p => {
-    if (!stores[p.Stores]) stores[p.Stores] = [];
-    stores[p.Stores].push(p);
-  });
+  pickers.forEach(p => { (stores[p.Stores] = stores[p.Stores] || []).push(p); });
 
   Object.values(stores).forEach(grp => {
-    // Per-metric score (lower metric value = higher score)
     SCORE_METRICS.forEach(m => {
       const vals = grp.map(p => p[m] || 0);
-      const min = Math.min(...vals), max = Math.max(...vals);
+      const mn = Math.min(...vals), mx = Math.max(...vals);
       grp.forEach(p => {
-        p[`_s_${m}`] = max === min
-          ? 10
-          : +( 10 * (1 - (p[m] - min) / (max - min)) ).toFixed(2);
+        p[`_s_${m}`] = mx === mn ? 10 : +(10 * (1 - (p[m] - mn) / (mx - mn))).toFixed(2);
       });
     });
-
-    // Total score
     grp.forEach(p => {
-      p._totalScore = +( SCORE_METRICS.reduce((s, m) => s + (p[`_s_${m}`]||0), 0) ).toFixed(2);
+      p._totalScore = +(SCORE_METRICS.reduce((s, m) => s + (p[`_s_${m}`]||0), 0)).toFixed(2);
     });
 
-    // Tags within store
     const n = grp.length;
-    const sorted = [...grp].sort((a, b) => b._totalScore - a._totalScore);
-    sorted.forEach((p, rank) => {
-      if (n <= 1) { p._tag = 'Best'; return; }
-      if (n === 2) { p._tag = rank === 0 ? 'Best' : 'Needs Improvement'; return; }
-      const topN = Math.max(1, Math.floor(n * 0.25));
-      const botN = Math.max(1, Math.floor(n * 0.25));
-      if (rank < topN)        p._tag = 'Best';
-      else if (rank >= n - botN) p._tag = 'Needs Improvement';
-      else                    p._tag = 'Average';
+    [...grp].sort((a, b) => b._totalScore - a._totalScore).forEach((p, rank) => {
+      if (n <= 1)                          p._tag = 'Best';
+      else if (n === 2)                    p._tag = rank === 0 ? 'Best' : 'Needs Improvement';
+      else if (rank < Math.floor(n*0.25))  p._tag = 'Best';
+      else if (rank >= n - Math.floor(n*0.25)) p._tag = 'Needs Improvement';
+      else                                 p._tag = 'Average';
     });
   });
-
   return pickers;
 }
 
-// ── Render ─────────────────────────────────────────────────────────────
+// ── Render ────────────────────────────────────────────────────────────────
 function renderAll() {
   const search = document.getElementById('f-picker').value.trim().toLowerCase();
-  filteredScored = search
-    ? scoredData.filter(p => p.Picker_ID.toLowerCase().includes(search))
-    : scoredData;
+  filteredScored = search ? scoredData.filter(p => p.Picker_ID.toLowerCase().includes(search)) : scoredData;
 
-  const maxScore = SCORE_METRICS.length * 10;
-  const n = filteredScored.length;
-  const avg = n ? (filteredScored.reduce((s,p) => s+p._totalScore,0)/n).toFixed(1) : '—';
-  document.getElementById('kpi-pickers').textContent  = n;
+  const maxScore = SCORE_METRICS.length * 10, n = filteredScored.length;
+  const avg = n ? (filteredScored.reduce((s,p)=>s+p._totalScore,0)/n).toFixed(1) : '—';
+  document.getElementById('kpi-pickers').textContent  = n.toLocaleString();
   document.getElementById('kpi-avg-score').textContent = n ? `${avg}/${maxScore}` : '—';
   document.getElementById('kpi-best').textContent  = filteredScored.filter(p=>p._tag==='Best').length;
   document.getElementById('kpi-needs').textContent = filteredScored.filter(p=>p._tag==='Needs Improvement').length;
-
   renderSummary();
   renderDetail();
 }
 
-// ── Summary Tab ────────────────────────────────────────────────────────
+// ── Summary Tab ───────────────────────────────────────────────────────────
 function renderSummary() {
-  const maxScore = SCORE_METRICS.length * 10;
-  const groupBy  = document.getElementById('summary-groupby').value;
-  const groupLabel = {'Stores':'Store','City.Final':'City','Zone':'Zone','City Head.Final':'City Head'}[groupBy];
+  const maxScore  = SCORE_METRICS.length * 10;
+  const groupBy   = document.getElementById('summary-groupby').value;
+  const groupLabel= {'Stores':'Store','City.Final':'City','Zone':'Zone','City Head.Final':'City Head'}[groupBy];
+  const hasPRTO   = SCORE_METRICS.includes('_pRTOPct');
 
-  // Aggregate
   const map = {};
   filteredScored.forEach(p => {
     const k = p[groupBy] || 'Unknown';
-    if (!map[k]) map[k] = { _key:k, _n:0, _orders:0, _units:0, _inf:0, _mis:0, _mss:0, _ins:0, _rto:0, _score:0, _best:0, _needs:0 };
+    if (!map[k]) map[k] = {key:k, n:0, orders:0, units:0, inf:0, mis:0, mss:0, ins:0, rto:0, score:0, best:0, needs:0};
     const g = map[k];
-    g._n++;
-    g._orders += p.Total_Orders;
-    g._units  += p.Total_Units;
-    g._inf    += p._infUnitPct;
-    g._mis    += p._misshipUnitPct;
-    g._mss    += p._missingUnitPct;
-    g._ins    += p._avgInstoreUnitMin;
-    g._rto    += p._pRTOPct;
-    g._score  += p._totalScore;
-    if (p._tag === 'Best')               g._best++;
-    if (p._tag === 'Needs Improvement')  g._needs++;
+    g.n++; g.orders+=p.Total_Orders; g.units+=p.Total_Units;
+    g.inf+=p._infUnitPct; g.mis+=p._misshipUnitPct; g.mss+=p._missingUnitPct;
+    g.ins+=p._avgInstoreUnitMin; g.rto+=p._pRTOPct; g.score+=p._totalScore;
+    if (p._tag==='Best') g.best++;
+    if (p._tag==='Needs Improvement') g.needs++;
   });
 
   let groups = Object.values(map).map(g => ({
     ...g,
-    avgINF    : g._n ? g._inf/g._n : 0,
-    avgMis    : g._n ? g._mis/g._n : 0,
-    avgMss    : g._n ? g._mss/g._n : 0,
-    avgIns    : g._n ? g._ins/g._n : 0,
-    avgRTO    : g._n ? g._rto/g._n : 0,
-    _avgScore : g._n ? g._score/g._n : 0,
+    avgINF: g.n?g.inf/g.n:0, avgMis: g.n?g.mis/g.n:0, avgMss: g.n?g.mss/g.n:0,
+    avgIns: g.n?g.ins/g.n:0, avgRTO: g.n?g.rto/g.n:0, _avgScore: g.n?g.score/g.n:0,
   }));
-
-  // Sort
-  groups.sort((a, b) => {
-    const va = a[summarySortKey], vb = b[summarySortKey];
-    if (typeof va === 'string') return summarySortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
-    return summarySortAsc ? va - vb : vb - va;
+  groups.sort((a,b)=>{
+    const va=a[summarySortKey],vb=b[summarySortKey];
+    if(typeof va==='string') return summarySortAsc?va.localeCompare(vb):vb.localeCompare(va);
+    return summarySortAsc?va-vb:vb-va;
   });
 
-  const hasPRTO = SCORE_METRICS.includes('_pRTOPct');
   document.getElementById('summary-title').textContent = `${groupLabel}-wise Score Summary`;
-
   document.getElementById('summary-thead').innerHTML = `<tr>
-    <th onclick="sortSummary('_key')">${groupLabel} <span class="sort-icon" id="ss-_key"></span></th>
-    <th onclick="sortSummary('_n')">Pickers <span class="sort-icon" id="ss-_n"></span></th>
-    <th onclick="sortSummary('_orders')">Orders <span class="sort-icon" id="ss-_orders"></span></th>
-    <th onclick="sortSummary('_units')">Units <span class="sort-icon" id="ss-_units"></span></th>
+    <th onclick="sortSummary('key')">${groupLabel} <span class="sort-icon" id="ss-key"></span></th>
+    <th onclick="sortSummary('n')">Pickers <span class="sort-icon" id="ss-n"></span></th>
+    <th onclick="sortSummary('orders')">Orders <span class="sort-icon" id="ss-orders"></span></th>
+    <th onclick="sortSummary('units')">Units <span class="sort-icon" id="ss-units"></span></th>
     <th class="table-warning" onclick="sortSummary('avgINF')">Avg INF% <span class="sort-icon" id="ss-avgINF"></span></th>
     <th class="table-danger"  onclick="sortSummary('avgMis')">Avg Misship% <span class="sort-icon" id="ss-avgMis"></span></th>
     <th class="table-danger"  onclick="sortSummary('avgMss')">Avg Missing% <span class="sort-icon" id="ss-avgMss"></span></th>
-    <th onclick="sortSummary('avgIns')">Avg Instore/Unit (m) <span class="sort-icon" id="ss-avgIns"></span></th>
-    ${hasPRTO ? `<th class="table-warning" onclick="sortSummary('avgRTO')">Avg pRTO% <span class="sort-icon" id="ss-avgRTO"></span></th>` : ''}
+    <th onclick="sortSummary('avgIns')">Avg Instore/Unit <span class="sort-icon" id="ss-avgIns"></span></th>
+    ${hasPRTO?`<th class="table-warning" onclick="sortSummary('avgRTO')">Avg pRTO% <span class="sort-icon" id="ss-avgRTO"></span></th>`:''}
     <th class="table-primary" onclick="sortSummary('_avgScore')">Avg Score/${maxScore} <span class="sort-icon" id="ss-_avgScore"></span></th>
-    <th style="color:#059669" onclick="sortSummary('_best')">Best <span class="sort-icon" id="ss-_best"></span></th>
-    <th class="text-danger"   onclick="sortSummary('_needs')">Needs Impv <span class="sort-icon" id="ss-_needs"></span></th>
+    <th style="color:#059669" onclick="sortSummary('best')">Best <span class="sort-icon" id="ss-best"></span></th>
+    <th class="text-danger"   onclick="sortSummary('needs')">Needs Impv <span class="sort-icon" id="ss-needs"></span></th>
   </tr>`;
 
-  // Refresh sort icons
-  document.querySelectorAll('[id^="ss-"]').forEach(el => el.textContent = '');
-  const si = document.getElementById(`ss-${summarySortKey}`);
-  if (si) si.textContent = summarySortAsc ? '▲' : '▼';
+  document.querySelectorAll('[id^="ss-"]').forEach(el=>el.textContent='');
+  const si=document.getElementById(`ss-${summarySortKey}`);
+  if(si) si.textContent = summarySortAsc?'▲':'▼';
 
   const tbody = document.getElementById('summary-tbody');
-  if (!groups.length) {
-    tbody.innerHTML = `<tr><td colspan="99" class="text-center py-3 text-muted">No data</td></tr>`;
-    return;
-  }
+  if (!groups.length) { tbody.innerHTML='<tr><td colspan="99" class="text-center py-3 text-muted">No data</td></tr>'; return; }
 
   tbody.innerHTML = groups.map(g => {
-    const pct  = (g._avgScore / maxScore * 100).toFixed(0);
-    const col  = g._avgScore >= maxScore*0.7 ? '#059669' : g._avgScore >= maxScore*0.4 ? '#d97706' : '#dc2626';
+    const pct = (g._avgScore/maxScore*100).toFixed(0);
+    const col = g._avgScore>=maxScore*.7?'#059669':g._avgScore>=maxScore*.4?'#d97706':'#dc2626';
     return `<tr>
-      <td><strong>${g._key}</strong></td>
-      <td>${g._n}</td>
-      <td>${g._orders.toLocaleString()}</td>
-      <td>${g._units.toLocaleString()}</td>
+      <td><strong>${g.key}</strong></td>
+      <td>${g.n}</td>
+      <td>${g.orders.toLocaleString()}</td>
+      <td>${g.units.toLocaleString()}</td>
       <td class="table-warning">${g.avgINF.toFixed(2)}%</td>
       <td class="table-danger">${g.avgMis.toFixed(2)}%</td>
       <td class="table-danger">${g.avgMss.toFixed(2)}%</td>
       <td>${g.avgIns.toFixed(3)} m</td>
-      ${hasPRTO ? `<td class="table-warning">${g.avgRTO.toFixed(2)}%</td>` : ''}
+      ${hasPRTO?`<td class="table-warning">${g.avgRTO.toFixed(2)}%</td>`:''}
       <td class="table-primary">
         <span style="color:${col};font-weight:700">${g._avgScore.toFixed(1)}</span>
         <span class="bar-wrap"><span class="bar-fill" style="width:${pct}%;background:${col}"></span></span>
       </td>
-      <td><span class="badge-best">${g._best}</span></td>
-      <td><span class="badge-needs">${g._needs}</span></td>
+      <td><span class="badge-best">${g.best}</span></td>
+      <td><span class="badge-needs">${g.needs}</span></td>
     </tr>`;
   }).join('');
 }
 
-// ── Detail Tab ─────────────────────────────────────────────────────────
+// ── Detail Tab ─────────────────────────────────────────────────────────────
 function buildDetailHeader() {
   const hasPRTO  = SCORE_METRICS.includes('_pRTOPct');
   const maxScore = SCORE_METRICS.length * 10;
-
   const cols = [
-    ['Picker_ID',           'Picker ID', ''],
-    ['Stores',              'Store', ''],
-    ['City.Final',          'City', ''],
-    ['Zone',                'Zone', ''],
-    ['Total_Orders',        'Orders', ''],
-    ['Total_Units',         'Units', ''],
-    ['Total_INF',           'INF Count', 'table-warning'],
-    ['Total_Misshipment',   'Misship Count', 'table-danger'],
-    ['Total_Missing_Item',  'Missing Count', 'table-danger'],
-    ['Total_Returns',       'Returns Count', ''],
-    ['_totalInstoreMin',    'Instore (min)', ''],
-    ['_avgInstoreOrderMin', 'Instore/Order (m)', ''],
-    ['_avgInstoreUnitMin',  'Instore/Unit (m)', ''],
-    ['_infUnitPct',         'INF%', 'table-warning'],
-    ['_misshipUnitPct',     'Misship%', 'table-danger'],
-    ['_missingUnitPct',     'Missing%', 'table-danger'],
+    ['Picker_ID','Picker ID',''],['Stores','Store',''],['City.Final','City',''],['Zone','Zone',''],
+    ['Total_Orders','Orders',''],['Total_Units','Units',''],
+    ['Total_INF','INF Count','table-warning'],
+    ['Total_Misshipment','Misship Count','table-danger'],
+    ['Total_Missing_Item','Missing Count','table-danger'],
+    ['Total_Returns','Returns Count',''],
+    ['_totalInstoreMin','Instore (min)',''],
+    ['_avgInstoreOrderMin','Instore/Order (m)',''],
+    ['_avgInstoreUnitMin','Instore/Unit (m)',''],
+    ['_infUnitPct','INF%','table-warning'],
+    ['_misshipUnitPct','Misship%','table-danger'],
+    ['_missingUnitPct','Missing%','table-danger'],
   ];
-  if (hasPRTO) cols.push(['_pRTOPct', 'pRTO%', 'table-warning']);
-
+  if (hasPRTO) cols.push(['_pRTOPct','pRTO%','table-warning']);
   cols.push(
-    [`_s__infUnitPct`,         'INF Score /10',     'table-info'],
-    [`_s__misshipUnitPct`,     'Misship Score /10', 'table-info'],
-    [`_s__missingUnitPct`,     'Missing Score /10', 'table-info'],
-    [`_s__avgInstoreUnitMin`,  'Instore Score /10', 'table-info'],
+    ['_s__infUnitPct','INF Score /10','table-info'],
+    ['_s__misshipUnitPct','Misship Score /10','table-info'],
+    ['_s__missingUnitPct','Missing Score /10','table-info'],
+    ['_s__avgInstoreUnitMin','Instore Score /10','table-info'],
   );
-  if (hasPRTO) cols.push([`_s__pRTOPct`, 'pRTO Score /10', 'table-info']);
-  cols.push([`_totalScore`, `Total Score /${maxScore}`, 'table-primary']);
+  if (hasPRTO) cols.push(['_s__pRTOPct','pRTO Score /10','table-info']);
+  cols.push([`_totalScore`,`Total Score /${maxScore}`,'table-primary']);
 
   document.getElementById('detail-thead-row').innerHTML =
-    cols.map(([k, lbl, cls]) =>
+    cols.map(([k,lbl,cls])=>
       `<th class="${cls}" onclick="sortDetail('${k}')">${lbl} <span class="sort-icon" id="ds-${k}"></span></th>`
     ).join('') + '<th>Tag</th>';
 }
@@ -559,37 +483,28 @@ function buildDetailHeader() {
 function renderDetail() {
   const hasPRTO  = SCORE_METRICS.includes('_pRTOPct');
   const maxScore = SCORE_METRICS.length * 10;
-
   let data = [...filteredScored];
-  data.sort((a, b) => {
-    const va = a[detailSortKey] ?? '', vb = b[detailSortKey] ?? '';
-    if (typeof va === 'string') return detailSortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
-    return detailSortAsc ? va - vb : vb - va;
+  data.sort((a,b)=>{
+    const va=a[detailSortKey]??'', vb=b[detailSortKey]??'';
+    if(typeof va==='string') return detailSortAsc?va.localeCompare(vb):vb.localeCompare(va);
+    return detailSortAsc?va-vb:vb-va;
   });
 
-  // Refresh sort icons
-  document.querySelectorAll('[id^="ds-"]').forEach(el => el.textContent = '');
-  const dsi = document.getElementById(`ds-${detailSortKey}`);
-  if (dsi) dsi.textContent = detailSortAsc ? '▲' : '▼';
+  document.querySelectorAll('[id^="ds-"]').forEach(el=>el.textContent='');
+  const dsi=document.getElementById(`ds-${detailSortKey}`);
+  if(dsi) dsi.textContent=detailSortAsc?'▲':'▼';
 
-  const tbody = document.getElementById('detail-tbody');
-  if (!data.length) {
-    tbody.innerHTML = `<tr><td colspan="99" class="text-center py-3 text-muted">No data</td></tr>`;
-    return;
-  }
+  const tbody=document.getElementById('detail-tbody');
+  if(!data.length){tbody.innerHTML='<tr><td colspan="99" class="text-center py-3 text-muted">No data</td></tr>';return;}
 
+  const s = (p,m) => (p[`_s_${m}`]||0).toFixed(1);
   tbody.innerHTML = data.map(p => {
-    const pct  = (p._totalScore / maxScore * 100).toFixed(0);
-    const cls  = p._totalScore >= maxScore*0.7 ? 'score-hi' : p._totalScore >= maxScore*0.4 ? 'score-md' : 'score-lo';
-    const col  = p._totalScore >= maxScore*0.7 ? '#059669' : p._totalScore >= maxScore*0.4 ? '#d97706' : '#dc2626';
-    const tagHtml = p._tag === 'Best'
-      ? `<span class="badge-best">Best</span>`
-      : p._tag === 'Needs Improvement'
-      ? `<span class="badge-needs">Needs Improvement</span>`
-      : `<span class="badge-avg">Average</span>`;
-
-    const s = m => (p[`_s_${m}`] || 0).toFixed(1);
-
+    const pct=(p._totalScore/maxScore*100).toFixed(0);
+    const cls=p._totalScore>=maxScore*.7?'score-hi':p._totalScore>=maxScore*.4?'score-md':'score-lo';
+    const col=p._totalScore>=maxScore*.7?'#059669':p._totalScore>=maxScore*.4?'#d97706':'#dc2626';
+    const tag=p._tag==='Best'?`<span class="badge-best">Best</span>`:
+              p._tag==='Needs Improvement'?`<span class="badge-needs">Needs Improvement</span>`:
+              `<span class="badge-avg">Average</span>`;
     return `<tr>
       <td><strong>${p.Picker_ID}</strong></td>
       <td>${p.Stores}</td>
@@ -607,77 +522,67 @@ function renderDetail() {
       <td class="table-warning">${p._infUnitPct.toFixed(2)}%</td>
       <td class="table-danger">${p._misshipUnitPct.toFixed(2)}%</td>
       <td class="table-danger">${p._missingUnitPct.toFixed(2)}%</td>
-      ${hasPRTO ? `<td class="table-warning">${(p._pRTOPct||0).toFixed(2)}%</td>` : ''}
-      <td class="table-info">${s('_infUnitPct')}/10</td>
-      <td class="table-info">${s('_misshipUnitPct')}/10</td>
-      <td class="table-info">${s('_missingUnitPct')}/10</td>
-      <td class="table-info">${s('_avgInstoreUnitMin')}/10</td>
-      ${hasPRTO ? `<td class="table-info">${s('_pRTOPct')}/10</td>` : ''}
+      ${hasPRTO?`<td class="table-warning">${(p._pRTOPct||0).toFixed(2)}%</td>`:''}
+      <td class="table-info">${s(p,'_infUnitPct')}/10</td>
+      <td class="table-info">${s(p,'_misshipUnitPct')}/10</td>
+      <td class="table-info">${s(p,'_missingUnitPct')}/10</td>
+      <td class="table-info">${s(p,'_avgInstoreUnitMin')}/10</td>
+      ${hasPRTO?`<td class="table-info">${s(p,'_pRTOPct')}/10</td>`:''}
       <td class="table-primary"><span class="${cls}">${p._totalScore.toFixed(1)}</span>
         <span class="bar-wrap"><span class="bar-fill" style="width:${pct}%;background:${col}"></span></span>
       </td>
-      <td>${tagHtml}</td>
+      <td>${tag}</td>
     </tr>`;
   }).join('');
 }
 
-// ── Sort helpers ───────────────────────────────────────────────────────
+// ── Sort ──────────────────────────────────────────────────────────────────
 function sortDetail(key) {
-  if (detailSortKey === key) detailSortAsc = !detailSortAsc;
-  else { detailSortKey = key; detailSortAsc = typeof (filteredScored[0]||{})[key] === 'string'; }
+  if(detailSortKey===key) detailSortAsc=!detailSortAsc;
+  else { detailSortKey=key; detailSortAsc=typeof(filteredScored[0]||{})[key]==='string'; }
   renderDetail();
 }
-
 function sortSummary(key) {
-  if (summarySortKey === key) summarySortAsc = !summarySortAsc;
-  else { summarySortKey = key; summarySortAsc = key === '_key'; }
+  if(summarySortKey===key) summarySortAsc=!summarySortAsc;
+  else { summarySortKey=key; summarySortAsc=key==='key'; }
   renderSummary();
 }
-
 function showTab(tab) {
-  document.getElementById('tab-summary').classList.toggle('d-none', tab !== 'summary');
-  document.getElementById('tab-detail').classList.toggle('d-none', tab !== 'detail');
-  document.querySelectorAll('#mainTabs .nav-link').forEach((btn, i) => {
-    btn.classList.toggle('active', (i===0 && tab==='summary') || (i===1 && tab==='detail'));
-  });
+  document.getElementById('tab-summary').classList.toggle('d-none', tab!=='summary');
+  document.getElementById('tab-detail').classList.toggle('d-none', tab!=='detail');
+  document.querySelectorAll('#mainTabs .nav-link').forEach((b,i)=>
+    b.classList.toggle('active',(i===0&&tab==='summary')||(i===1&&tab==='detail')));
 }
 
-// ── CSV Download ───────────────────────────────────────────────────────
+// ── CSV ───────────────────────────────────────────────────────────────────
 function downloadCSV() {
   const hasPRTO  = SCORE_METRICS.includes('_pRTOPct');
   const maxScore = SCORE_METRICS.length * 10;
-
-  const headers = [
+  const hdrs = [
     'Picker ID','Store','City','City Head','Zone',
     'Orders','Units','INF Count','Misship Count','Missing Count','Returns Count',
     'Total Instore (min)','Avg Instore/Order (min)','Avg Instore/Unit (min)',
     'INF%','Misship%','Missing%',
-    ...(hasPRTO ? ['pRTO%'] : []),
+    ...(hasPRTO?['pRTO%']:[]),
     'INF Score /10','Misship Score /10','Missing Score /10','Instore Score /10',
-    ...(hasPRTO ? ['pRTO Score /10'] : []),
+    ...(hasPRTO?['pRTO Score /10']:[]),
     `Total Score /${maxScore}`,'Tag'
   ];
-
-  const rows = filteredScored.map(p => {
-    const s = m => (p[`_s_${m}`] || 0).toFixed(2);
-    return [
-      p.Picker_ID, p.Stores, p['City.Final'], p['City Head.Final'], p.Zone,
-      p.Total_Orders, p.Total_Units, p.Total_INF, p.Total_Misshipment, p.Total_Missing_Item, p.Total_Returns,
-      p._totalInstoreMin.toFixed(2), p._avgInstoreOrderMin.toFixed(2), p._avgInstoreUnitMin.toFixed(3),
-      p._infUnitPct.toFixed(2), p._misshipUnitPct.toFixed(2), p._missingUnitPct.toFixed(2),
-      ...(hasPRTO ? [(p._pRTOPct||0).toFixed(2)] : []),
-      s('_infUnitPct'), s('_misshipUnitPct'), s('_missingUnitPct'), s('_avgInstoreUnitMin'),
-      ...(hasPRTO ? [s('_pRTOPct')] : []),
-      p._totalScore.toFixed(2), p._tag
-    ];
-  });
-
-  const csv = [headers, ...rows]
-    .map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(','))
-    .join('\n');
-
+  const sm = (p,m)=>(p[`_s_${m}`]||0).toFixed(2);
+  const rows = filteredScored.map(p=>[
+    p.Picker_ID, p.Stores, p['City.Final'], p['City Head.Final'], p.Zone,
+    p.Total_Orders, p.Total_Units, p.Total_INF, p.Total_Misshipment,
+    p.Total_Missing_Item, p.Total_Returns,
+    p._totalInstoreMin.toFixed(2), p._avgInstoreOrderMin.toFixed(2), p._avgInstoreUnitMin.toFixed(3),
+    p._infUnitPct.toFixed(2), p._misshipUnitPct.toFixed(2), p._missingUnitPct.toFixed(2),
+    ...(hasPRTO?[(p._pRTOPct||0).toFixed(2)]:[]),
+    sm(p,'_infUnitPct'), sm(p,'_misshipUnitPct'), sm(p,'_missingUnitPct'), sm(p,'_avgInstoreUnitMin'),
+    ...(hasPRTO?[sm(p,'_pRTOPct')]:[]),
+    p._totalScore.toFixed(2), p._tag
+  ]);
+  const csv = [hdrs,...rows].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
   const a = document.createElement('a');
-  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+  a.href = 'data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
   a.download = `picker_performance_${new Date().toISOString().split('T')[0]}.csv`;
   a.click();
 }
