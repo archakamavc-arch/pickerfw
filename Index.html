@@ -211,8 +211,8 @@ function init(raw) {
     return;
   }
 
-  // Detect pRTO column
-  if (raw[0].hasOwnProperty('Total_pRTO')) {
+  // Detect pRTO column (sheet column is Total_PRTO)
+  if (raw[0].hasOwnProperty('Total_PRTO')) {
     SCORE_METRICS.push('_pRTOPct');
   }
 
@@ -327,7 +327,7 @@ function aggregatePickers(rows) {
       map[key] = {
         Picker_ID: r['Picker_ID'], Stores: r['Stores'], Zone: r['Zone'],
         'City.Final': r['City.Final'], 'City Head.Final': r['City Head.Final'],
-        _o:0, _u:0, _inf:0, _mis:0, _mss:0, _sec:0, _rto:0
+        _o:0, _u:0, _inf:0, _mis:0, _mss:0, _sec:0, _rto:0, _ret:0
       };
     }
     const p = map[key];
@@ -337,16 +337,18 @@ function aggregatePickers(rows) {
     p._mis += Number(r['Total_Misshipment'])     || 0;
     p._mss += Number(r['Total_Missing_Item'])    || 0;
     p._sec += Number(r['Total_Instore_Time_Sec'])|| 0;
-    p._rto += Number(r['Total_pRTO'])            || 0;
+    p._rto += Number(r['Total_PRTO'])            || 0;
+    p._ret += Number(r['Total_Returns'])         || 0;
   });
 
   return Object.values(map).map(p => {
-    const {_o:o, _u:u, _inf, _mis, _mss, _sec, _rto} = p;
+    const {_o:o, _u:u, _inf, _mis, _mss, _sec, _rto, _ret} = p;
     p.Total_Orders          = o;
     p.Total_Units           = u;
     p.Total_INF             = _inf;
     p.Total_Misshipment     = _mis;
     p.Total_Missing_Item    = _mss;
+    p.Total_Returns         = _ret;
     p._totalInstoreMin      = +(_sec/60).toFixed(2);
     p._avgInstoreOrderMin   = o>0 ? +((_sec/o)/60).toFixed(2) : 0;
     p._avgInstoreUnitMin    = u>0 ? +((_sec/u)/60).toFixed(3) : 0;
@@ -529,6 +531,7 @@ function buildDetailHeader() {
     ['Total_INF',           'INF Count', 'table-warning'],
     ['Total_Misshipment',   'Misship Count', 'table-danger'],
     ['Total_Missing_Item',  'Missing Count', 'table-danger'],
+    ['Total_Returns',       'Returns Count', ''],
     ['_totalInstoreMin',    'Instore (min)', ''],
     ['_avgInstoreOrderMin', 'Instore/Order (m)', ''],
     ['_avgInstoreUnitMin',  'Instore/Unit (m)', ''],
@@ -597,6 +600,7 @@ function renderDetail() {
       <td class="table-warning">${p.Total_INF}</td>
       <td class="table-danger">${p.Total_Misshipment}</td>
       <td class="table-danger">${p.Total_Missing_Item}</td>
+      <td>${p.Total_Returns}</td>
       <td>${p._totalInstoreMin.toFixed(1)}</td>
       <td>${p._avgInstoreOrderMin.toFixed(2)}</td>
       <td>${p._avgInstoreUnitMin.toFixed(3)}</td>
@@ -645,7 +649,7 @@ function downloadCSV() {
 
   const headers = [
     'Picker ID','Store','City','City Head','Zone',
-    'Orders','Units','INF Count','Misship Count','Missing Count',
+    'Orders','Units','INF Count','Misship Count','Missing Count','Returns Count',
     'Total Instore (min)','Avg Instore/Order (min)','Avg Instore/Unit (min)',
     'INF%','Misship%','Missing%',
     ...(hasPRTO ? ['pRTO%'] : []),
@@ -658,7 +662,7 @@ function downloadCSV() {
     const s = m => (p[`_s_${m}`] || 0).toFixed(2);
     return [
       p.Picker_ID, p.Stores, p['City.Final'], p['City Head.Final'], p.Zone,
-      p.Total_Orders, p.Total_Units, p.Total_INF, p.Total_Misshipment, p.Total_Missing_Item,
+      p.Total_Orders, p.Total_Units, p.Total_INF, p.Total_Misshipment, p.Total_Missing_Item, p.Total_Returns,
       p._totalInstoreMin.toFixed(2), p._avgInstoreOrderMin.toFixed(2), p._avgInstoreUnitMin.toFixed(3),
       p._infUnitPct.toFixed(2), p._misshipUnitPct.toFixed(2), p._missingUnitPct.toFixed(2),
       ...(hasPRTO ? [(p._pRTOPct||0).toFixed(2)] : []),
