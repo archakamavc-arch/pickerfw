@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <base target="_top">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { background: #f0f2f5; padding: 16px; font-size: 0.83rem; }
+    .panel { background: #fff; padding: 16px; border-radius: 10px; box-shadow: 0 1px 6px rgba(0,0,0,.08); margin-bottom: 16px; }
+    th { white-space: nowrap; font-size: 0.8rem; background: #e9ecef !important; cursor: pointer; user-select: none; position: sticky; top: 0; z-index: 1; }
+    th:hover { background: #d1d5db !important; }
+    td { white-space: nowrap; font-size: 0.8rem; vertical-align: middle; }
+    .tbl-wrap { max-height: 480px; overflow-y: auto; }
+    .sort-icon { font-size: 0.7rem; color: #999; margin-left: 3px; }
+    .badge-best { background: #d1fae5; color: #065f46; padding: 2px 9px; border-radius: 10px; font-size: 0.75rem; font-weight: 600; }
+    .badge-needs { background: #fee2e2; color: #991b1b; padding: 2px 9px; border-radius: 10px; font-size: 0.75rem; font-weight: 600; }
+    .badge-avg  { background: #e5e7eb; color: #374151; padding: 2px 9px; border-radius: 10px; font-size: 0.75rem; font-weight: 600; }
+    .score-hi { color: #059669; font-weight: 700; }
+    .score-md { color: #d97706; font-weight: 700; }
+    .score-lo { color: #dc2626; font-weight: 700; }
+    .bar-wrap { display: inline-block; width: 48px; height: 5px; background: #e5e7eb; border-radius: 3px; vertical-align: middle; margin-left: 4px; }
+    .bar-fill  { height: 100%; border-radius: 3px; }
+    .kpi-val { font-size: 1.7rem; font-weight: 700; }
+    .kpi-lbl { font-size: 0.75rem; color: #6b7280; }
+    #loading { text-align: center; padding: 80px; font-size: 1.1rem; color: #6b7280; }
+    .nav-tabs .nav-link { font-size: 0.85rem; }
+    .nav-tabs .nav-link.active { font-weight: 600; }
+    .tab-panel { border-top: none; border-radius: 0 0 10px 10px; }
+    .info-row { font-size: 0.78rem; color: #6b7280; margin-top: 4px; }
+  </style>
+</head>
+<body>
+
+<div id="loading">Loading data, please wait…</div>
+
+<div id="app" class="container-fluid px-2" style="display:none">
+
+  <!-- Header -->
+  <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+    <div>
+      <h5 class="mb-0 fw-bold">Picker Performance Dashboard</h5>
+      <div class="info-row" id="data-period-label"></div>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+      <a href="https://docs.google.com/spreadsheets/d/13p0haCwj5YUhTyyapvU-haCGLLYPT4XShNhGRv5_QQI/edit"
+         target="_blank" class="btn btn-sm btn-outline-secondary">📊 Source Sheet</a>
+      <button class="btn btn-sm btn-success" onclick="downloadCSV()">⬇ Download CSV</button>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <div class="panel">
+    <div class="row g-2 align-items-end">
+      <div class="col-6 col-md-2">
+        <label class="form-label mb-1">Date From</label>
+        <input type="date" id="f-date-from" class="form-control form-control-sm fi">
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label mb-1">Date To</label>
+        <input type="date" id="f-date-to" class="form-control form-control-sm fi">
+      </div>
+      <div class="col-6 col-md-1">
+        <label class="form-label mb-1">Zone</label>
+        <select id="f-zone" class="form-select form-select-sm fi"><option value="All">All</option></select>
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label mb-1">City</label>
+        <select id="f-city" class="form-select form-select-sm fi"><option value="All">All</option></select>
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label mb-1">City Head</label>
+        <select id="f-cityhead" class="form-select form-select-sm fi"><option value="All">All</option></select>
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label mb-1">Store</label>
+        <select id="f-store" class="form-select form-select-sm fi"><option value="All">All</option></select>
+      </div>
+      <div class="col-8 col-md-2">
+        <label class="form-label mb-1">Search Picker</label>
+        <input type="text" id="f-picker" class="form-control form-control-sm" placeholder="Picker ID…">
+      </div>
+      <div class="col-4 col-md-1">
+        <button id="reset-btn" class="btn btn-sm btn-outline-secondary w-100">Reset</button>
+      </div>
+    </div>
+    <div class="info-row mt-2" id="scoring-note"></div>
+  </div>
+
+  <!-- KPI Cards -->
+  <div class="row g-3 mb-3">
+    <div class="col-6 col-md-3">
+      <div class="panel text-center mb-0">
+        <div class="kpi-val text-primary" id="kpi-pickers">—</div>
+        <div class="kpi-lbl">Total Pickers</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="panel text-center mb-0">
+        <div class="kpi-val" id="kpi-avg-score" style="color:#d97706">—</div>
+        <div class="kpi-lbl">Avg Score</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="panel text-center mb-0">
+        <div class="kpi-val score-hi" id="kpi-best">—</div>
+        <div class="kpi-lbl">Best Pickers</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="panel text-center mb-0">
+        <div class="kpi-val score-lo" id="kpi-needs">—</div>
+        <div class="kpi-lbl">Needs Improvement</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <ul class="nav nav-tabs" id="mainTabs">
+    <li class="nav-item">
+      <button class="nav-link active" onclick="showTab('summary')">Score Summary</button>
+    </li>
+    <li class="nav-item">
+      <button class="nav-link" onclick="showTab('detail')">Picker Details</button>
+    </li>
+  </ul>
+
+  <!-- Score Summary Tab -->
+  <div id="tab-summary" class="panel tab-panel">
+    <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+      <span class="fw-semibold" id="summary-title">Score Summary</span>
+      <div class="d-flex align-items-center gap-2">
+        <label class="text-muted" style="font-size:0.78rem;white-space:nowrap">Group by:</label>
+        <select id="summary-groupby" class="form-select form-select-sm" style="width:auto" onchange="renderAll()">
+          <option value="Stores">Store</option>
+          <option value="City.Final">City</option>
+          <option value="Zone">Zone</option>
+          <option value="City Head.Final">City Head</option>
+        </select>
+      </div>
+    </div>
+    <div class="tbl-wrap">
+      <table class="table table-hover table-bordered table-sm mb-0" id="summary-table">
+        <thead id="summary-thead"></thead>
+        <tbody id="summary-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Picker Details Tab -->
+  <div id="tab-detail" class="panel tab-panel d-none">
+    <div class="tbl-wrap">
+      <table class="table table-hover table-bordered table-sm mb-0">
+        <thead><tr id="detail-thead-row"></tr></thead>
+        <tbody id="detail-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div><!-- #app -->
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────
+let masterData = [];       // raw rows from sheet
+let scoredData  = [];      // aggregated + scored pickers
+let filteredScored = [];   // after picker-search
+
+let SCORE_METRICS = ['_infUnitPct', '_misshipUnitPct', '_missingUnitPct', '_avgInstoreUnitMin'];
+// pRTO added dynamically if column detected
+
+let detailSortKey = '_totalScore', detailSortAsc = false;
+let summarySortKey = '_avgScore',  summarySortAsc = false;
+
+// ── Bootstrap ──────────────────────────────────────────────────────────
+window.onload = function() {
+  google.script.run
+    .withSuccessHandler(init)
+    .withFailureHandler(e => {
+      document.getElementById('loading').textContent = 'Error: ' + e.message;
+    })
+    .getDashboardData();
+};
+
+function init(raw) {
+  if (!raw || raw.length === 0) {
+    document.getElementById('loading').textContent = 'No data found in sheet.';
+    return;
+  }
+
+  // Detect pRTO column
+  if (raw[0].hasOwnProperty('Total_pRTO')) {
+    SCORE_METRICS.push('_pRTOPct');
+  }
+
+  masterData = raw.map(row => {
+    let d = new Date(row['Date']);
+    row._displayDate = isNaN(d) ? String(row['Date'] || '') : d.toISOString().split('T')[0];
+    row['Zone']            = String(row['Zone']            || '');
+    row['City.Final']      = String(row['City.Final']      || '');
+    row['City Head.Final'] = String(row['City Head.Final'] || '');
+    row['Stores']          = String(row['Stores']          || '');
+    row['Picker_ID']       = String(row['Picker_ID']       || '');
+    return row;
+  });
+
+  // Set date range
+  const dates = masterData.map(r => r._displayDate).filter(Boolean).sort();
+  if (dates.length) {
+    document.getElementById('f-date-from').value = dates[0];
+    document.getElementById('f-date-to').value   = dates[dates.length - 1];
+    document.getElementById('data-period-label').textContent =
+      `Data: ${dates[0]} → ${dates[dates.length - 1]}  (${new Set(dates).size} day(s))`;
+  }
+
+  document.querySelectorAll('.fi').forEach(el => el.addEventListener('change', applyFilters));
+  document.getElementById('f-picker').addEventListener('input', renderAll);
+  document.getElementById('reset-btn').addEventListener('click', resetFilters);
+
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('app').style.display = '';
+
+  buildDetailHeader();
+  applyFilters();
+}
+
+// ── Filters ────────────────────────────────────────────────────────────
+function getF() {
+  return {
+    dateFrom : document.getElementById('f-date-from').value,
+    dateTo   : document.getElementById('f-date-to').value,
+    zone     : document.getElementById('f-zone').value,
+    city     : document.getElementById('f-city').value,
+    cityHead : document.getElementById('f-cityhead').value,
+    store    : document.getElementById('f-store').value,
+  };
+}
+
+function rowPasses(row, f) {
+  if (f.dateFrom && row._displayDate < f.dateFrom) return false;
+  if (f.dateTo   && row._displayDate > f.dateTo)   return false;
+  if (f.zone     !== 'All' && row['Zone']            !== f.zone)     return false;
+  if (f.city     !== 'All' && row['City.Final']      !== f.city)     return false;
+  if (f.cityHead !== 'All' && row['City Head.Final'] !== f.cityHead) return false;
+  if (f.store    !== 'All' && row['Stores']          !== f.store)    return false;
+  return true;
+}
+
+function applyFilters() {
+  const f = getF();
+  updateDropdown('f-zone',     'Zone',            'zone',     f);
+  updateDropdown('f-city',     'City.Final',      'city',     f);
+  updateDropdown('f-cityhead', 'City Head.Final', 'cityHead', f);
+  updateDropdown('f-store',    'Stores',          'store',    f);
+
+  const filteredRaw = masterData.filter(r => rowPasses(r, f));
+  const agg = aggregatePickers(filteredRaw);
+  scoredData = scoreStoreWise(agg);
+
+  const maxScore = SCORE_METRICS.length * 10;
+  document.getElementById('scoring-note').textContent =
+    `Scores are store-wise relative (0–10 per metric). Max total: ${maxScore}. ` +
+    `Metrics scored: ${SCORE_METRICS.map(m => ({
+      '_infUnitPct':'INF%','_misshipUnitPct':'Misship%','_missingUnitPct':'Missing%',
+      '_avgInstoreUnitMin':'Instore/Unit','_pRTOPct':'pRTO%'
+    }[m]||m)).join(', ')}.`;
+
+  renderAll();
+}
+
+function updateDropdown(elId, rowKey, fKey, f) {
+  const tmp = { ...f, [fKey]: 'All' };
+  const opts = new Set();
+  masterData.forEach(r => { if (rowPasses(r, tmp) && r[rowKey]) opts.add(r[rowKey]); });
+
+  const sel = document.getElementById(elId);
+  const cur = f[fKey];
+  sel.innerHTML = '<option value="All">All</option>';
+  [...opts].sort().forEach(v => {
+    const o = document.createElement('option');
+    o.value = v; o.textContent = v;
+    if (v === cur) o.selected = true;
+    sel.appendChild(o);
+  });
+}
+
+function resetFilters() {
+  document.querySelectorAll('select.fi').forEach(s => s.value = 'All');
+  document.getElementById('f-picker').value = '';
+  const dates = masterData.map(r => r._displayDate).filter(Boolean).sort();
+  if (dates.length) {
+    document.getElementById('f-date-from').value = dates[0];
+    document.getElementById('f-date-to').value   = dates[dates.length - 1];
+  }
+  applyFilters();
+}
+
+// ── Aggregation ────────────────────────────────────────────────────────
+function aggregatePickers(rows) {
+  const map = {};
+  rows.forEach(r => {
+    const key = `${r['Picker_ID']}||${r['Stores']}`;
+    if (!map[key]) {
+      map[key] = {
+        Picker_ID: r['Picker_ID'], Stores: r['Stores'], Zone: r['Zone'],
+        'City.Final': r['City.Final'], 'City Head.Final': r['City Head.Final'],
+        _o:0, _u:0, _inf:0, _mis:0, _mss:0, _sec:0, _rto:0
+      };
+    }
+    const p = map[key];
+    p._o   += Number(r['Total_Orders'])          || 0;
+    p._u   += Number(r['Total_Units'])           || 0;
+    p._inf += Number(r['Total_INF'])             || 0;
+    p._mis += Number(r['Total_Misshipment'])     || 0;
+    p._mss += Number(r['Total_Missing_Item'])    || 0;
+    p._sec += Number(r['Total_Instore_Time_Sec'])|| 0;
+    p._rto += Number(r['Total_pRTO'])            || 0;
+  });
+
+  return Object.values(map).map(p => {
+    const {_o:o, _u:u, _inf, _mis, _mss, _sec, _rto} = p;
+    p.Total_Orders          = o;
+    p.Total_Units           = u;
+    p.Total_INF             = _inf;
+    p.Total_Misshipment     = _mis;
+    p.Total_Missing_Item    = _mss;
+    p._totalInstoreMin      = +(_sec/60).toFixed(2);
+    p._avgInstoreOrderMin   = o>0 ? +((_sec/o)/60).toFixed(2) : 0;
+    p._avgInstoreUnitMin    = u>0 ? +((_sec/u)/60).toFixed(3) : 0;
+    p._infUnitPct           = u>0 ? +(_inf/_u*100).toFixed(3) : 0;
+    p._misshipUnitPct       = u>0 ? +(_mis/_u*100).toFixed(3) : 0;
+    p._missingUnitPct       = u>0 ? +(_mss/_u*100).toFixed(3) : 0;
+    p._pRTOPct              = o>0 ? +(_rto/_o*100).toFixed(3) : 0;
+    return p;
+  });
+}
+
+// ── Scoring ────────────────────────────────────────────────────────────
+function scoreStoreWise(pickers) {
+  // Group by store
+  const stores = {};
+  pickers.forEach(p => {
+    if (!stores[p.Stores]) stores[p.Stores] = [];
+    stores[p.Stores].push(p);
+  });
+
+  Object.values(stores).forEach(grp => {
+    // Per-metric score (lower metric value = higher score)
+    SCORE_METRICS.forEach(m => {
+      const vals = grp.map(p => p[m] || 0);
+      const min = Math.min(...vals), max = Math.max(...vals);
+      grp.forEach(p => {
+        p[`_s_${m}`] = max === min
+          ? 10
+          : +( 10 * (1 - (p[m] - min) / (max - min)) ).toFixed(2);
+      });
+    });
+
+    // Total score
+    grp.forEach(p => {
+      p._totalScore = +( SCORE_METRICS.reduce((s, m) => s + (p[`_s_${m}`]||0), 0) ).toFixed(2);
+    });
+
+    // Tags within store
+    const n = grp.length;
+    const sorted = [...grp].sort((a, b) => b._totalScore - a._totalScore);
+    sorted.forEach((p, rank) => {
+      if (n <= 1) { p._tag = 'Best'; return; }
+      if (n === 2) { p._tag = rank === 0 ? 'Best' : 'Needs Improvement'; return; }
+      const topN = Math.max(1, Math.floor(n * 0.25));
+      const botN = Math.max(1, Math.floor(n * 0.25));
+      if (rank < topN)        p._tag = 'Best';
+      else if (rank >= n - botN) p._tag = 'Needs Improvement';
+      else                    p._tag = 'Average';
+    });
+  });
+
+  return pickers;
+}
+
+// ── Render ─────────────────────────────────────────────────────────────
+function renderAll() {
+  const search = document.getElementById('f-picker').value.trim().toLowerCase();
+  filteredScored = search
+    ? scoredData.filter(p => p.Picker_ID.toLowerCase().includes(search))
+    : scoredData;
+
+  const maxScore = SCORE_METRICS.length * 10;
+  const n = filteredScored.length;
+  const avg = n ? (filteredScored.reduce((s,p) => s+p._totalScore,0)/n).toFixed(1) : '—';
+  document.getElementById('kpi-pickers').textContent  = n;
+  document.getElementById('kpi-avg-score').textContent = n ? `${avg}/${maxScore}` : '—';
+  document.getElementById('kpi-best').textContent  = filteredScored.filter(p=>p._tag==='Best').length;
+  document.getElementById('kpi-needs').textContent = filteredScored.filter(p=>p._tag==='Needs Improvement').length;
+
+  renderSummary();
+  renderDetail();
+}
+
+// ── Summary Tab ────────────────────────────────────────────────────────
+function renderSummary() {
+  const maxScore = SCORE_METRICS.length * 10;
+  const groupBy  = document.getElementById('summary-groupby').value;
+  const groupLabel = {'Stores':'Store','City.Final':'City','Zone':'Zone','City Head.Final':'City Head'}[groupBy];
+
+  // Aggregate
+  const map = {};
+  filteredScored.forEach(p => {
+    const k = p[groupBy] || 'Unknown';
+    if (!map[k]) map[k] = { _key:k, _n:0, _orders:0, _units:0, _inf:0, _mis:0, _mss:0, _ins:0, _rto:0, _score:0, _best:0, _needs:0 };
+    const g = map[k];
+    g._n++;
+    g._orders += p.Total_Orders;
+    g._units  += p.Total_Units;
+    g._inf    += p._infUnitPct;
+    g._mis    += p._misshipUnitPct;
+    g._mss    += p._missingUnitPct;
+    g._ins    += p._avgInstoreUnitMin;
+    g._rto    += p._pRTOPct;
+    g._score  += p._totalScore;
+    if (p._tag === 'Best')               g._best++;
+    if (p._tag === 'Needs Improvement')  g._needs++;
+  });
+
+  let groups = Object.values(map).map(g => ({
+    ...g,
+    avgINF    : g._n ? g._inf/g._n : 0,
+    avgMis    : g._n ? g._mis/g._n : 0,
+    avgMss    : g._n ? g._mss/g._n : 0,
+    avgIns    : g._n ? g._ins/g._n : 0,
+    avgRTO    : g._n ? g._rto/g._n : 0,
+    _avgScore : g._n ? g._score/g._n : 0,
+  }));
+
+  // Sort
+  groups.sort((a, b) => {
+    const va = a[summarySortKey], vb = b[summarySortKey];
+    if (typeof va === 'string') return summarySortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+    return summarySortAsc ? va - vb : vb - va;
+  });
+
+  const hasPRTO = SCORE_METRICS.includes('_pRTOPct');
+  document.getElementById('summary-title').textContent = `${groupLabel}-wise Score Summary`;
+
+  document.getElementById('summary-thead').innerHTML = `<tr>
+    <th onclick="sortSummary('_key')">${groupLabel} <span class="sort-icon" id="ss-_key"></span></th>
+    <th onclick="sortSummary('_n')">Pickers <span class="sort-icon" id="ss-_n"></span></th>
+    <th onclick="sortSummary('_orders')">Orders <span class="sort-icon" id="ss-_orders"></span></th>
+    <th onclick="sortSummary('_units')">Units <span class="sort-icon" id="ss-_units"></span></th>
+    <th class="table-warning" onclick="sortSummary('avgINF')">Avg INF% <span class="sort-icon" id="ss-avgINF"></span></th>
+    <th class="table-danger"  onclick="sortSummary('avgMis')">Avg Misship% <span class="sort-icon" id="ss-avgMis"></span></th>
+    <th class="table-danger"  onclick="sortSummary('avgMss')">Avg Missing% <span class="sort-icon" id="ss-avgMss"></span></th>
+    <th onclick="sortSummary('avgIns')">Avg Instore/Unit (m) <span class="sort-icon" id="ss-avgIns"></span></th>
+    ${hasPRTO ? `<th class="table-warning" onclick="sortSummary('avgRTO')">Avg pRTO% <span class="sort-icon" id="ss-avgRTO"></span></th>` : ''}
+    <th class="table-primary" onclick="sortSummary('_avgScore')">Avg Score/${maxScore} <span class="sort-icon" id="ss-_avgScore"></span></th>
+    <th style="color:#059669" onclick="sortSummary('_best')">Best <span class="sort-icon" id="ss-_best"></span></th>
+    <th class="text-danger"   onclick="sortSummary('_needs')">Needs Impv <span class="sort-icon" id="ss-_needs"></span></th>
+  </tr>`;
+
+  // Refresh sort icons
+  document.querySelectorAll('[id^="ss-"]').forEach(el => el.textContent = '');
+  const si = document.getElementById(`ss-${summarySortKey}`);
+  if (si) si.textContent = summarySortAsc ? '▲' : '▼';
+
+  const tbody = document.getElementById('summary-tbody');
+  if (!groups.length) {
+    tbody.innerHTML = `<tr><td colspan="99" class="text-center py-3 text-muted">No data</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = groups.map(g => {
+    const pct  = (g._avgScore / maxScore * 100).toFixed(0);
+    const col  = g._avgScore >= maxScore*0.7 ? '#059669' : g._avgScore >= maxScore*0.4 ? '#d97706' : '#dc2626';
+    return `<tr>
+      <td><strong>${g._key}</strong></td>
+      <td>${g._n}</td>
+      <td>${g._orders.toLocaleString()}</td>
+      <td>${g._units.toLocaleString()}</td>
+      <td class="table-warning">${g.avgINF.toFixed(2)}%</td>
+      <td class="table-danger">${g.avgMis.toFixed(2)}%</td>
+      <td class="table-danger">${g.avgMss.toFixed(2)}%</td>
+      <td>${g.avgIns.toFixed(3)} m</td>
+      ${hasPRTO ? `<td class="table-warning">${g.avgRTO.toFixed(2)}%</td>` : ''}
+      <td class="table-primary">
+        <span style="color:${col};font-weight:700">${g._avgScore.toFixed(1)}</span>
+        <span class="bar-wrap"><span class="bar-fill" style="width:${pct}%;background:${col}"></span></span>
+      </td>
+      <td><span class="badge-best">${g._best}</span></td>
+      <td><span class="badge-needs">${g._needs}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Detail Tab ─────────────────────────────────────────────────────────
+function buildDetailHeader() {
+  const hasPRTO  = SCORE_METRICS.includes('_pRTOPct');
+  const maxScore = SCORE_METRICS.length * 10;
+
+  const cols = [
+    ['Picker_ID',           'Picker ID', ''],
+    ['Stores',              'Store', ''],
+    ['City.Final',          'City', ''],
+    ['Zone',                'Zone', ''],
+    ['Total_Orders',        'Orders', ''],
+    ['Total_Units',         'Units', ''],
+    ['Total_INF',           'INF Count', 'table-warning'],
+    ['Total_Misshipment',   'Misship Count', 'table-danger'],
+    ['Total_Missing_Item',  'Missing Count', 'table-danger'],
+    ['_totalInstoreMin',    'Instore (min)', ''],
+    ['_avgInstoreOrderMin', 'Instore/Order (m)', ''],
+    ['_avgInstoreUnitMin',  'Instore/Unit (m)', ''],
+    ['_infUnitPct',         'INF%', 'table-warning'],
+    ['_misshipUnitPct',     'Misship%', 'table-danger'],
+    ['_missingUnitPct',     'Missing%', 'table-danger'],
+  ];
+  if (hasPRTO) cols.push(['_pRTOPct', 'pRTO%', 'table-warning']);
+
+  cols.push(
+    [`_s__infUnitPct`,         'INF Score /10',     'table-info'],
+    [`_s__misshipUnitPct`,     'Misship Score /10', 'table-info'],
+    [`_s__missingUnitPct`,     'Missing Score /10', 'table-info'],
+    [`_s__avgInstoreUnitMin`,  'Instore Score /10', 'table-info'],
+  );
+  if (hasPRTO) cols.push([`_s__pRTOPct`, 'pRTO Score /10', 'table-info']);
+  cols.push([`_totalScore`, `Total Score /${maxScore}`, 'table-primary']);
+
+  document.getElementById('detail-thead-row').innerHTML =
+    cols.map(([k, lbl, cls]) =>
+      `<th class="${cls}" onclick="sortDetail('${k}')">${lbl} <span class="sort-icon" id="ds-${k}"></span></th>`
+    ).join('') + '<th>Tag</th>';
+}
+
+function renderDetail() {
+  const hasPRTO  = SCORE_METRICS.includes('_pRTOPct');
+  const maxScore = SCORE_METRICS.length * 10;
+
+  let data = [...filteredScored];
+  data.sort((a, b) => {
+    const va = a[detailSortKey] ?? '', vb = b[detailSortKey] ?? '';
+    if (typeof va === 'string') return detailSortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+    return detailSortAsc ? va - vb : vb - va;
+  });
+
+  // Refresh sort icons
+  document.querySelectorAll('[id^="ds-"]').forEach(el => el.textContent = '');
+  const dsi = document.getElementById(`ds-${detailSortKey}`);
+  if (dsi) dsi.textContent = detailSortAsc ? '▲' : '▼';
+
+  const tbody = document.getElementById('detail-tbody');
+  if (!data.length) {
+    tbody.innerHTML = `<tr><td colspan="99" class="text-center py-3 text-muted">No data</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = data.map(p => {
+    const pct  = (p._totalScore / maxScore * 100).toFixed(0);
+    const cls  = p._totalScore >= maxScore*0.7 ? 'score-hi' : p._totalScore >= maxScore*0.4 ? 'score-md' : 'score-lo';
+    const col  = p._totalScore >= maxScore*0.7 ? '#059669' : p._totalScore >= maxScore*0.4 ? '#d97706' : '#dc2626';
+    const tagHtml = p._tag === 'Best'
+      ? `<span class="badge-best">Best</span>`
+      : p._tag === 'Needs Improvement'
+      ? `<span class="badge-needs">Needs Improvement</span>`
+      : `<span class="badge-avg">Average</span>`;
+
+    const s = m => (p[`_s_${m}`] || 0).toFixed(1);
+
+    return `<tr>
+      <td><strong>${p.Picker_ID}</strong></td>
+      <td>${p.Stores}</td>
+      <td>${p['City.Final']}</td>
+      <td>${p.Zone}</td>
+      <td>${p.Total_Orders.toLocaleString()}</td>
+      <td>${p.Total_Units.toLocaleString()}</td>
+      <td class="table-warning">${p.Total_INF}</td>
+      <td class="table-danger">${p.Total_Misshipment}</td>
+      <td class="table-danger">${p.Total_Missing_Item}</td>
+      <td>${p._totalInstoreMin.toFixed(1)}</td>
+      <td>${p._avgInstoreOrderMin.toFixed(2)}</td>
+      <td>${p._avgInstoreUnitMin.toFixed(3)}</td>
+      <td class="table-warning">${p._infUnitPct.toFixed(2)}%</td>
+      <td class="table-danger">${p._misshipUnitPct.toFixed(2)}%</td>
+      <td class="table-danger">${p._missingUnitPct.toFixed(2)}%</td>
+      ${hasPRTO ? `<td class="table-warning">${(p._pRTOPct||0).toFixed(2)}%</td>` : ''}
+      <td class="table-info">${s('_infUnitPct')}/10</td>
+      <td class="table-info">${s('_misshipUnitPct')}/10</td>
+      <td class="table-info">${s('_missingUnitPct')}/10</td>
+      <td class="table-info">${s('_avgInstoreUnitMin')}/10</td>
+      ${hasPRTO ? `<td class="table-info">${s('_pRTOPct')}/10</td>` : ''}
+      <td class="table-primary"><span class="${cls}">${p._totalScore.toFixed(1)}</span>
+        <span class="bar-wrap"><span class="bar-fill" style="width:${pct}%;background:${col}"></span></span>
+      </td>
+      <td>${tagHtml}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Sort helpers ───────────────────────────────────────────────────────
+function sortDetail(key) {
+  if (detailSortKey === key) detailSortAsc = !detailSortAsc;
+  else { detailSortKey = key; detailSortAsc = typeof (filteredScored[0]||{})[key] === 'string'; }
+  renderDetail();
+}
+
+function sortSummary(key) {
+  if (summarySortKey === key) summarySortAsc = !summarySortAsc;
+  else { summarySortKey = key; summarySortAsc = key === '_key'; }
+  renderSummary();
+}
+
+function showTab(tab) {
+  document.getElementById('tab-summary').classList.toggle('d-none', tab !== 'summary');
+  document.getElementById('tab-detail').classList.toggle('d-none', tab !== 'detail');
+  document.querySelectorAll('#mainTabs .nav-link').forEach((btn, i) => {
+    btn.classList.toggle('active', (i===0 && tab==='summary') || (i===1 && tab==='detail'));
+  });
+}
+
+// ── CSV Download ───────────────────────────────────────────────────────
+function downloadCSV() {
+  const hasPRTO  = SCORE_METRICS.includes('_pRTOPct');
+  const maxScore = SCORE_METRICS.length * 10;
+
+  const headers = [
+    'Picker ID','Store','City','City Head','Zone',
+    'Orders','Units','INF Count','Misship Count','Missing Count',
+    'Total Instore (min)','Avg Instore/Order (min)','Avg Instore/Unit (min)',
+    'INF%','Misship%','Missing%',
+    ...(hasPRTO ? ['pRTO%'] : []),
+    'INF Score /10','Misship Score /10','Missing Score /10','Instore Score /10',
+    ...(hasPRTO ? ['pRTO Score /10'] : []),
+    `Total Score /${maxScore}`,'Tag'
+  ];
+
+  const rows = filteredScored.map(p => {
+    const s = m => (p[`_s_${m}`] || 0).toFixed(2);
+    return [
+      p.Picker_ID, p.Stores, p['City.Final'], p['City Head.Final'], p.Zone,
+      p.Total_Orders, p.Total_Units, p.Total_INF, p.Total_Misshipment, p.Total_Missing_Item,
+      p._totalInstoreMin.toFixed(2), p._avgInstoreOrderMin.toFixed(2), p._avgInstoreUnitMin.toFixed(3),
+      p._infUnitPct.toFixed(2), p._misshipUnitPct.toFixed(2), p._missingUnitPct.toFixed(2),
+      ...(hasPRTO ? [(p._pRTOPct||0).toFixed(2)] : []),
+      s('_infUnitPct'), s('_misshipUnitPct'), s('_missingUnitPct'), s('_avgInstoreUnitMin'),
+      ...(hasPRTO ? [s('_pRTOPct')] : []),
+      p._totalScore.toFixed(2), p._tag
+    ];
+  });
+
+  const csv = [headers, ...rows]
+    .map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(','))
+    .join('\n');
+
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+  a.download = `picker_performance_${new Date().toISOString().split('T')[0]}.csv`;
+  a.click();
+}
+</script>
+</body>
+</html>
