@@ -180,20 +180,33 @@ window.onload = function() {
 };
 
 function init(raw) {
-  // Server returned sentinel object when sheet is empty
   if (!raw || !Array.isArray(raw)) {
-    const info = raw || {};
+    // Sentinel object returned when sheet found but empty
+    const info = (raw && typeof raw === 'object') ? raw : {};
+    const name = info.sheetName || '(unknown)';
+    let detail;
+    if (info.status === 'EMPTY') {
+      detail = `Sheet "<b>${name}</b>" is completely empty. Push data via your Python script, then reload.`;
+    } else if (info.status === 'HEADER_ONLY') {
+      detail = `Sheet "<b>${name}</b>" has only the header row — no data rows yet.<br>` +
+               `Headers found: <code>${info.headers || '?'}</code><br>Push data via your Python script, then reload.`;
+    } else {
+      // Unknown object — likely an authorization error or stale deployment
+      detail = `Unexpected response from server. Most likely cause: <b>re-authorization required</b>.<br>` +
+               `<ol style="margin:6px 0 0 16px;padding:0">` +
+               `<li>Open the Apps Script editor → Run → <code>testAuth</code></li>` +
+               `<li>Accept the permission dialog</li>` +
+               `<li>Deploy a new version (Deploy → Manage deployments → New version)</li>` +
+               `<li>Reload this page</li></ol>`;
+    }
     document.getElementById('loading').innerHTML =
-      `<div class="text-danger fw-semibold">No data found.</div>` +
-      `<div class="text-muted mt-2" style="font-size:0.85rem">` +
-      `Sheet: <strong>${info._sheetName || '(unknown)'}</strong> — ` +
-      `${info._rows === 1 ? 'Only header row present, no data rows.' : info._rows === 0 ? 'Sheet is empty.' : 'Empty result.'}` +
-      `<br>Check that your Python script has pushed data and the sheet name matches.</div>`;
+      `<div class="text-danger fw-semibold mb-2">No data loaded</div>` +
+      `<div style="font-size:0.85rem;max-width:500px;margin:0 auto;text-align:left">${detail}</div>`;
     return;
   }
   if (raw.length === 0) {
     document.getElementById('loading').innerHTML =
-      `<div class="text-warning fw-semibold">Sheet found but returned 0 data rows.</div>` +
+      `<div class="text-warning fw-semibold">Sheet returned 0 data rows.</div>` +
       `<div class="text-muted mt-2" style="font-size:0.85rem">Run your Python pipeline to push data, then reload.</div>`;
     return;
   }

@@ -18,17 +18,34 @@ function getDashboardData() {
   if (!sheet) throw new Error('No sheets found in spreadsheet ' + SPREADSHEET_ID);
 
   const data = sheet.getDataRange().getValues();
-  if (data.length <= 1) {
-    // Return sentinel so client can show a useful message
-    return { _empty: true, _sheetName: sheet.getName(), _rows: data.length };
+  const sheetName = sheet.getName();
+
+  // GAS strips underscore-prefixed properties from google.script.run return values,
+  // so use plain names in the sentinel object.
+  if (data.length === 0) {
+    return { status: 'EMPTY', sheetName: sheetName, rowCount: 0 };
+  }
+  if (data.length === 1) {
+    return { status: 'HEADER_ONLY', sheetName: sheetName, rowCount: 1,
+             headers: data[0].join(', ') };
   }
 
   const headers = data[0];
-  const rows = data.slice(1).map(row => {
+  return data.slice(1).map(row => {
     let obj = {};
     headers.forEach((h, i) => { obj[h] = row[i]; });
     return obj;
   });
-  rows._sheetName = sheet.getName(); // attach for debug; JS arrays allow extra properties
-  return rows;
+}
+
+// Run this manually in the Apps Script editor (Run → testAuth) to verify
+// authorization and see sheet info in the Execution Log.
+function testAuth() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheets = ss.getSheets().map(s => `${s.getName()} (${s.getLastRow()} rows)`);
+  Logger.log('Sheets found: ' + sheets.join(' | '));
+  const sheet = ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];
+  Logger.log('Using sheet: ' + sheet.getName());
+  Logger.log('Data rows (excl header): ' + Math.max(0, sheet.getLastRow() - 1));
+  Logger.log('Headers: ' + sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].join(', '));
 }
