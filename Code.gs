@@ -10,33 +10,51 @@ function doGet() {
     if (!sheet || sheet.getLastRow() <= 1) {
       tmpl.jsonData = '{"h":[],"r":[]}';
     } else {
-      const vals    = sheet.getDataRange().getValues();
-      const allHdrs = vals[0];
+      const allVals = sheet.getDataRange().getValues();
+      const H = allVals[0];
 
-      // Send only the columns the dashboard needs (strips pre-computed averages & Store Code)
-      const KEEP = ['Date','Picker_ID','Stores','City.Final','City Head.Final','Zone',
-                    'Total_Orders','Total_Units','Total_INF','Total_PRTO','Total_Returns',
+      // Header → sheet column index
+      const ci = {};
+      H.forEach((h, i) => { ci[h] = i; });
+
+      const DIMS = ['Date','Picker_ID','Stores','City.Final','City Head.Final','Zone'];
+      const NUMS = ['Total_Orders','Total_Units','Total_INF','Total_PRTO','Total_Returns',
                     'Total_Misshipment','Total_Missing_Item','Total_Instore_Time_Sec'];
+      const KEYS   = DIMS.concat(NUMS).filter(k => ci[k] !== undefined);
+      const numSet = new Set(NUMS);
+      const tz     = Session.getScriptTimeZone();
 
-      const idxMap   = KEEP.map(k => allHdrs.indexOf(k));
-      const usedKeys = KEEP.filter((_,i)  => idxMap[i] >= 0);
-      const usedIdxs = idxMap.filter(i    => i >= 0);
+      // Pre-aggregate by (Date, Picker_ID, Stores) — collapses multiple intra-day rows
+      const agg = {};
+      for (let i = 1, n = allVals.length; i < n; i++) {
+        const row  = allVals[i];
+        const rawD = row[ci['Date']];
+        const dateS = rawD instanceof Date
+          ? Utilities.formatDate(rawD, tz, 'yyyy-MM-dd')
+          : String(rawD || '').substring(0, 10);
+        if (!dateS) continue;
 
-      const rows = vals.slice(1).map(row =>
-        usedIdxs.map(i => {
-          const v = row[i];
-          // Format GAS Date objects as YYYY-MM-DD to save space and avoid timezone issues
-          return (v instanceof Date)
-            ? Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd')
-            : v;
-        })
-      );
+        const pid   = String(row[ci['Picker_ID']] || '');
+        const store = String(row[ci['Stores']]    || '');
+        const key   = dateS + '\x00' + pid + '\x00' + store;
 
-      // Escape </script> so the browser doesn't misparse the embedded JSON
-      tmpl.jsonData = JSON.stringify({ h: usedKeys, r: rows })
+        if (!agg[key]) {
+          const rec = {};
+          KEYS.forEach(k => {
+            if (k === 'Date')        rec[k] = dateS;
+            else if (!numSet.has(k)) rec[k] = String(row[ci[k]] || '');
+            else                     rec[k] = 0;
+          });
+          agg[key] = rec;
+        }
+        KEYS.forEach(k => { if (numSet.has(k)) agg[key][k] += (+row[ci[k]] || 0); });
+      }
+
+      const rows = Object.values(agg).map(rec => KEYS.map(k => rec[k]));
+      tmpl.jsonData = JSON.stringify({ h: KEYS, r: rows })
                           .replace(/<\/script>/gi, '<\\/script>');
     }
-  } catch (e) {
+  } catch(e) {
     tmpl.jsonData = JSON.stringify({ error: e.message });
   }
 
@@ -46,7 +64,6 @@ function doGet() {
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
-// Run manually in the Apps Script editor to verify sheet access
 function testAuth() {
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   ss.getSheets().forEach(s => Logger.log(s.getName() + ': ' + s.getLastRow() + ' rows'));
